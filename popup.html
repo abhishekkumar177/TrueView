@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>TrustLens</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 280px;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 13px;
+    }
+
+    header {
+      padding: 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      display: flex; align-items: center; gap: 10px;
+    }
+
+    .logo-mark {
+      width: 28px; height: 28px; border-radius: 8px;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 800; color: #fff;
+    }
+
+    .logo-text {
+      font-size: 16px; font-weight: 700;
+      background: linear-gradient(90deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+
+    main { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+
+    #status-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 11px;
+      background: rgba(255,255,255,0.04);
+      border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);
+      font-size: 12px; color: #94a3b8;
+    }
+
+    #status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #475569; flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    #status-dot.active   { background: #4ade80; }
+    #status-dot.inactive { background: #f87171; }
+
+    #run-btn {
+      width: 100%; padding: 11px;
+      background: linear-gradient(90deg, #38bdf8, #818cf8);
+      border: none; border-radius: 9px;
+      color: #0f172a; font-size: 14px; font-weight: 700;
+      cursor: pointer; transition: opacity 0.2s, transform 0.1s;
+    }
+    #run-btn:hover  { opacity: 0.9; }
+    #run-btn:active { transform: scale(0.98); }
+    #run-btn:disabled { opacity: 0.4; cursor: default; }
+
+    #result-box {
+      display: none;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 9px; padding: 12px;
+    }
+
+    .result-row {
+      display: flex; justify-content: space-between; align-items: baseline;
+      margin-bottom: 7px;
+    }
+    .result-row:last-child { margin-bottom: 0; }
+    .result-key   { color: #64748b; font-size: 12px; }
+    .result-val   { font-weight: 700; font-size: 15px; }
+    .val-trust    { color: #38bdf8; }
+    .val-fake     { color: #f87171; }
+
+    footer {
+      padding: 8px 16px 12px;
+      text-align: center; font-size: 11px; color: #334155;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo-mark">T</div>
+    <span class="logo-text">TrustLens</span>
+  </header>
+
+  <main>
+    <div id="status-row">
+      <span id="status-dot"></span>
+      <span id="status-text">Checking page…</span>
+    </div>
+
+    <button id="run-btn">Analyze Reviews</button>
+
+    <div id="result-box">
+      <div class="result-row">
+        <span class="result-key">Trust Rating</span>
+        <span class="result-val val-trust" id="res-trust">–</span>
+      </div>
+      <div class="result-row">
+        <span class="result-key">Original Rating</span>
+        <span class="result-val" id="res-original">–</span>
+      </div>
+      <div class="result-row">
+        <span class="result-key">Fake Reviews</span>
+        <span class="result-val val-fake" id="res-fake">–</span>
+      </div>
+      <div class="result-row">
+        <span class="result-key">Total Analyzed</span>
+        <span class="result-val" id="res-total">–</span>
+      </div>
+    </div>
+  </main>
+
+  <footer>TrustLens v1.0 · No data stored</footer>
+
+  <script>
+    const btn        = document.getElementById('run-btn');
+    const statusDot  = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const resultBox  = document.getElementById('result-box');
+
+    // Check if content script is alive
+    chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+      chrome.tabs.sendMessage(tab.id, { action: 'ping' }, (res) => {
+        if (chrome.runtime.lastError || !res) {
+          statusDot.className = 'inactive';
+          statusText.textContent = 'Not supported on this page';
+          btn.disabled = true;
+        } else {
+          statusDot.className = 'active';
+          statusText.textContent = 'Ready to analyze';
+        }
+      });
+    });
+
+    // Run analysis
+    btn.addEventListener('click', () => {
+      btn.textContent = 'Analyzing…';
+      btn.disabled = true;
+
+      chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+        chrome.tabs.sendMessage(tab.id, { action: 'runAnalysis' }, (res) => {
+          btn.textContent = 'Analyze Reviews';
+          btn.disabled = false;
+
+          if (!res || !res.success) {
+            statusText.textContent = 'Analysis failed or no reviews found.';
+            return;
+          }
+
+          const r = res.result;
+          document.getElementById('res-trust').textContent    = r.trustRating + ' ★';
+          document.getElementById('res-original').textContent = r.originalRating + ' ★';
+          document.getElementById('res-fake').textContent     = r.fakePercent + '%';
+          document.getElementById('res-total').textContent    = r.total;
+          resultBox.style.display = 'block';
+        });
+      });
+    });
+  </script>
+</body>
+</html>
