@@ -5,11 +5,14 @@
 
 
 trustview/
-
 ├── manifest.json               ← MV3, permissions, content_scripts
+
 ├── content.js                  ← entry point + message listener
+
 ├── popup.html                  ← toolbar popup UI
+
 └── src/
+
     ├── adapters/
     
     │   ├── amazonAdapter.js      ← Amazon DOM selectors
