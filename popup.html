@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <title>TrustLens</title>
+
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      width: 280px;
+      width: 300px;
       background: #0f172a;
       color: #e2e8f0;
       font-family: 'Segoe UI', system-ui, sans-serif;
@@ -24,7 +25,7 @@
       width: 28px; height: 28px; border-radius: 8px;
       background: linear-gradient(135deg, #38bdf8, #818cf8);
       display: flex; align-items: center; justify-content: center;
-      font-size: 14px; font-weight: 800; color: #fff;
+      font-weight: 800;
     }
 
     .logo-text {
@@ -33,138 +34,202 @@
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     }
 
-    main { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+    main {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .section {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 10px;
+      padding: 10px;
+    }
+
+    .section-title {
+      font-size: 11px;
+      color: #64748b;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .row:last-child { margin-bottom: 0; }
+
+    .key { color: #94a3b8; }
+    .val { font-weight: 700; }
+
+    .trust { color: #38bdf8; }
+    .fake { color: #f87171; }
 
     #status-row {
       display: flex; align-items: center; gap: 8px;
-      padding: 9px 11px;
+      padding: 8px;
       background: rgba(255,255,255,0.04);
-      border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);
-      font-size: 12px; color: #94a3b8;
+      border-radius: 8px;
+      font-size: 12px;
     }
 
     #status-dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      background: #475569; flex-shrink: 0;
-      transition: background 0.3s;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #475569;
     }
-    #status-dot.active   { background: #4ade80; }
+
+    #status-dot.active { background: #4ade80; }
     #status-dot.inactive { background: #f87171; }
 
-    #run-btn {
-      width: 100%; padding: 11px;
+    button {
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
       background: linear-gradient(90deg, #38bdf8, #818cf8);
-      border: none; border-radius: 9px;
-      color: #0f172a; font-size: 14px; font-weight: 700;
-      cursor: pointer; transition: opacity 0.2s, transform 0.1s;
-    }
-    #run-btn:hover  { opacity: 0.9; }
-    #run-btn:active { transform: scale(0.98); }
-    #run-btn:disabled { opacity: 0.4; cursor: default; }
-
-    #result-box {
-      display: none;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.06);
-      border-radius: 9px; padding: 12px;
+      font-weight: bold;
+      cursor: pointer;
     }
 
-    .result-row {
-      display: flex; justify-content: space-between; align-items: baseline;
-      margin-bottom: 7px;
+    button:disabled {
+      opacity: 0.4;
+      cursor: default;
     }
-    .result-row:last-child { margin-bottom: 0; }
-    .result-key   { color: #64748b; font-size: 12px; }
-    .result-val   { font-weight: 700; font-size: 15px; }
-    .val-trust    { color: #38bdf8; }
-    .val-fake     { color: #f87171; }
 
     footer {
-      padding: 8px 16px 12px;
-      text-align: center; font-size: 11px; color: #334155;
+      text-align: center;
+      font-size: 11px;
+      padding: 10px;
+      color: #334155;
     }
   </style>
 </head>
+
 <body>
-  <header>
-    <div class="logo-mark">T</div>
-    <span class="logo-text">TrustLens</span>
-  </header>
 
-  <main>
-    <div id="status-row">
-      <span id="status-dot"></span>
-      <span id="status-text">Checking page…</span>
+<header>
+  <div class="logo-mark">T</div>
+  <span class="logo-text">TrustLens</span>
+</header>
+
+<main>
+
+  <!-- STATUS -->
+  <div id="status-row">
+    <span id="status-dot"></span>
+    <span id="status-text">Checking page…</span>
+  </div>
+
+  <button id="run-btn">Analyze Reviews</button>
+
+  <!-- RESULTS -->
+  <div id="result-box" style="display:none;">
+
+    <!-- CORE -->
+    <div class="section">
+      <div class="section-title">Overview</div>
+      <div class="row"><span class="key">Trust Rating</span><span class="val trust" id="res-trust">–</span></div>
+      <div class="row"><span class="key">Original Rating</span><span class="val" id="res-original">–</span></div>
+      <div class="row"><span class="key">Fake Reviews</span><span class="val fake" id="res-fake">–</span></div>
+      <div class="row"><span class="key">Total</span><span class="val" id="res-total">–</span></div>
     </div>
 
-    <button id="run-btn">Analyze Reviews</button>
-
-    <div id="result-box">
-      <div class="result-row">
-        <span class="result-key">Trust Rating</span>
-        <span class="result-val val-trust" id="res-trust">–</span>
-      </div>
-      <div class="result-row">
-        <span class="result-key">Original Rating</span>
-        <span class="result-val" id="res-original">–</span>
-      </div>
-      <div class="result-row">
-        <span class="result-key">Fake Reviews</span>
-        <span class="result-val val-fake" id="res-fake">–</span>
-      </div>
-      <div class="result-row">
-        <span class="result-key">Total Analyzed</span>
-        <span class="result-val" id="res-total">–</span>
-      </div>
+    <!-- SIGNALS -->
+    <div class="section">
+      <div class="section-title">Signals</div>
+      <div class="row"><span class="key">Verified %</span><span class="val" id="res-verified">–</span></div>
+      <div class="row"><span class="key">Media Reviews %</span><span class="val" id="res-media">–</span></div>
+      <div class="row"><span class="key">Avg Word Count</span><span class="val" id="res-wordcount">–</span></div>
     </div>
-  </main>
 
-  <footer>TrustLens v1.0 · No data stored</footer>
+    <!-- SENTIMENT -->
+    <div class="section">
+      <div class="section-title">Text Analysis</div>
+      <div class="row"><span class="key">Mismatch %</span><span class="val" id="res-mismatch">–</span></div>
+    </div>
 
-  <script>
-    const btn        = document.getElementById('run-btn');
-    const statusDot  = document.getElementById('status-dot');
-    const statusText = document.getElementById('status-text');
-    const resultBox  = document.getElementById('result-box');
+    <!-- PERSONA -->
+    <div class="section">
+      <div class="section-title">User Personas</div>
+      <div class="row"><span class="key">Fake Users</span><span class="val fake" id="res-fake-users">–</span></div>
+      <div class="row"><span class="key">Suspicious</span><span class="val" id="res-dummy-users">–</span></div>
+      <div class="row"><span class="key">Real Users</span><span class="val trust" id="res-real-users">–</span></div>
+    </div>
 
-    // Check if content script is alive
-    chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
-      chrome.tabs.sendMessage(tab.id, { action: 'ping' }, (res) => {
-        if (chrome.runtime.lastError || !res) {
-          statusDot.className = 'inactive';
-          statusText.textContent = 'Not supported on this page';
-          btn.disabled = true;
-        } else {
-          statusDot.className = 'active';
-          statusText.textContent = 'Ready to analyze';
-        }
-      });
-    });
+  </div>
 
-    // Run analysis
-    btn.addEventListener('click', () => {
-      btn.textContent = 'Analyzing…';
+</main>
+
+<footer>TrustLens v2 · Intelligence Layer Active</footer>
+
+<script>
+const btn = document.getElementById('run-btn');
+const statusDot = document.getElementById('status-dot');
+const statusText = document.getElementById('status-text');
+const resultBox = document.getElementById('result-box');
+
+// Check content script
+chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+  chrome.tabs.sendMessage(tab.id, { action: 'ping' }, (res) => {
+    if (chrome.runtime.lastError || !res) {
+      statusDot.className = 'inactive';
+      statusText.textContent = 'Unsupported page';
       btn.disabled = true;
+    } else {
+      statusDot.className = 'active';
+      statusText.textContent = 'Ready';
+    }
+  });
+});
 
-      chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
-        chrome.tabs.sendMessage(tab.id, { action: 'runAnalysis' }, (res) => {
-          btn.textContent = 'Analyze Reviews';
-          btn.disabled = false;
+// Run analysis
+btn.addEventListener('click', () => {
+  btn.textContent = 'Analyzing ⏳';
+  btn.disabled = true;
 
-          if (!res || !res.success) {
-            statusText.textContent = 'Analysis failed or no reviews found.';
-            return;
-          }
+  chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+    chrome.tabs.sendMessage(tab.id, { action: 'runAnalysis' }, (res) => {
 
-          const r = res.result;
-          document.getElementById('res-trust').textContent    = r.trustRating + ' ★';
-          document.getElementById('res-original').textContent = r.originalRating + ' ★';
-          document.getElementById('res-fake').textContent     = r.fakePercent + '%';
-          document.getElementById('res-total').textContent    = r.total;
-          resultBox.style.display = 'block';
-        });
-      });
+      btn.textContent = 'Analyze Reviews';
+      btn.disabled = false;
+
+      if (!res || !res.success) {
+        statusDot.className = 'inactive';
+        statusText.textContent = 'Analysis failed';
+        return;
+      }
+
+      const r = res.result;
+
+      // CORE
+      document.getElementById('res-trust').textContent = r.trustRating + ' ★';
+      document.getElementById('res-original').textContent = r.originalRating + ' ★';
+      document.getElementById('res-fake').textContent = r.fakePercent + '%';
+      document.getElementById('res-total').textContent = r.total;
+
+      // SIGNALS
+      document.getElementById('res-verified').textContent = r.verifiedPercent + '%';
+      document.getElementById('res-media').textContent = r.mediaPercent + '%';
+      document.getElementById('res-wordcount').textContent = r.avgWordCount;
+
+      // SENTIMENT
+      document.getElementById('res-mismatch').textContent = r.mismatchPercent + '%';
+
+      // PERSONA
+      document.getElementById('res-fake-users').textContent = r.fakeUsers + '%';
+      document.getElementById('res-dummy-users').textContent = r.dummyUsers + '%';
+      document.getElementById('res-real-users').textContent = r.realUsers + '%';
+
+      resultBox.style.display = 'block';
     });
-  </script>
+  });
+});
+</script>
+
 </body>
 </html>
