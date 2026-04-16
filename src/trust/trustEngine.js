@@ -1,75 +1,83 @@
-// src/trust/trustEngine.js
-// Runs the full analysis pipeline and computes the Trust-Adjusted Rating.
-// Depends on: Preprocessor, FeatureEngineer, ScoringEngine (loaded before this)
+// ─────────────────────────────────────────────────────────────────────────────
+// trustEngine.js  —  TrustLens Stage 2 (updated)
+//
+// CHANGES FROM STAGE 1
+// ─────────────────────
+// The trust formula now factors in mismatchScore from SentimentRatingEngine.
+// A review where the text contradicts the star is discounted further —
+// beyond what the rule-based fakeScore alone would do.
+//
+// Updated formula:
+//   combinedFakeScore = clamp(fakeScore + 0.4 * mismatchScore, 0, 1)
+//   effectiveWeight   = 1 − combinedFakeScore
+//   R_adjusted        = Σ(rating × effectiveWeight) / Σ(effectiveWeight)
+//
+// All other Stage 1 outputs are preserved.
+// ─────────────────────────────────────────────────────────────────────────────
 
 const TrustEngine = (() => {
 
-  /**
-   * Full pipeline: preprocess → feature extract → score → compute trust rating.
-   *
-   * @param {Array<{ text, rating, username, timestamp }>} rawReviews
-   * @returns {{
-   *   originalRating: number,
-   *   trustRating: number,
-   *   fakeCount: number,
-   *   suspiciousCount: number,
-   *   trustedCount: number,
-   *   fakePercent: number,
-   *   total: number,
-   *   reviews: Array
-   * } | null}
-   */
-  function analyze(rawReviews) {
-    if (!rawReviews || rawReviews.length === 0) {
-      console.warn("[TrustLens] No reviews to analyze.");
-      return null;
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  function analyze(scoredReviews) {
+    if (!Array.isArray(scoredReviews) || scoredReviews.length === 0) {
+      return _empty();
     }
 
-    // Step 1 — Preprocess all reviews
-    const processed = rawReviews.map(r => Preprocessor.process(r));
+    let weightedRatingSum = 0;
+    let weightSum         = 0;
+    let rawRatingSum      = 0;
+    let fakeCount         = 0;
+    let suspiciousCount   = 0;
+    let trustedCount      = 0;
 
-    // Step 2 — Extract features (pass all reviews for context-level signals)
-    const withFeatures = processed.map(r => ({
-      ...r,
-      features: FeatureEngineer.extract(r, processed),
-    }));
+    const annotated = scoredReviews.map(review => {
+      const fakeScore     = clamp(review.fakeScore     || 0, 0, 1);
+      const mismatchScore = clamp(review.mismatchScore || 0, 0, 1);
 
-    // Step 3 — Score each review
-    const scored = withFeatures.map(r => {
-      const fakeScore = ScoringEngine.score(r.features);
-      const label     = ScoringEngine.classify(fakeScore);
-      return { ...r, fakeScore, label };
+      // Blend: mismatch score adds up to 40% extra fake weight
+      const combinedFakeScore = clamp(fakeScore + 0.4 * mismatchScore, 0, 1);
+      const effectiveWeight   = 1 - combinedFakeScore;
+
+      const rating = parseFloat(review.rating) || 0;
+      weightedRatingSum += rating * effectiveWeight;
+      weightSum         += effectiveWeight;
+      rawRatingSum      += rating;
+
+      const label = review.label || ScoringEngine.classify(fakeScore);
+      if (label === 'fake')       fakeCount++;
+      else if (label === 'suspicious') suspiciousCount++;
+      else                        trustedCount++;
+
+      return { ...review, combinedFakeScore, effectiveWeight, label };
     });
 
-    // Step 4 — Original rating: simple average of reviews that have a rating
-    const withRating     = scored.filter(r => r.rating > 0);
-    const originalRating = withRating.length > 0
-      ? withRating.reduce((sum, r) => sum + r.rating, 0) / withRating.length
-      : 0;
-
-    // Step 5 — Trust-Adjusted Rating
-    // Formula: R_adjusted = Σ(rating × (1 − fakeScore)) / Σ(1 − fakeScore)
-    const weightedSum = scored.reduce((sum, r) => sum + r.rating * (1 - r.fakeScore), 0);
-    const weightSum   = scored.reduce((sum, r) => sum + (1 - r.fakeScore), 0);
-    const trustRating = weightSum > 0 ? weightedSum / weightSum : originalRating;
-
-    // Step 6 — Summary counts
-    const fakeCount       = scored.filter(r => r.label === "fake").length;
-    const suspiciousCount = scored.filter(r => r.label === "suspicious").length;
-    const trustedCount    = scored.filter(r => r.label === "trusted").length;
-    const fakePercent     = Math.round((fakeCount / scored.length) * 100);
+    const n = scoredReviews.length;
+    const originalRating = parseFloat((rawRatingSum / n).toFixed(2));
+    const trustRating    = weightSum > 0
+      ? parseFloat((weightedRatingSum / weightSum).toFixed(2))
+      : originalRating;
 
     return {
-      originalRating: Math.round(originalRating * 10) / 10,
-      trustRating:    Math.round(trustRating    * 10) / 10,
+      originalRating,
+      trustRating,
       fakeCount,
       suspiciousCount,
       trustedCount,
-      fakePercent,
-      total:   scored.length,
-      reviews: scored,
+      fakePercent    : parseFloat(((fakeCount / n) * 100).toFixed(1)),
+      total          : n,
+      scoredReviews  : annotated,
+    };
+  }
+
+  function _empty() {
+    return {
+      originalRating: 0, trustRating: 0,
+      fakeCount: 0, suspiciousCount: 0, trustedCount: 0,
+      fakePercent: 0, total: 0, scoredReviews: [],
     };
   }
 
   return { analyze };
+
 })();
