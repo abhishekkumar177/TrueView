@@ -1,187 +1,177 @@
-// content.js — TrustLens entry point (injected into product pages)
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/**
- * Extracts the Amazon ASIN from the current URL.
- * Works for: /dp/ASIN/, /gp/product/ASIN/, /product-reviews/ASIN/
- * @returns {string|null}
- */
-function getASIN() {
-  const patterns = [
-    /\/dp\/([A-Z0-9]{10})/,
-    /\/gp\/product\/([A-Z0-9]{10})/,
-    /\/product-reviews\/([A-Z0-9]{10})/,
-  ];
-  for (const p of patterns) {
-    const m = window.location.pathname.match(p);
-    if (m) return m[1];
-  }
-  return null;
-}
-
-/**
- * Fetches one page of reviews from Amazon's product-reviews endpoint.
- * Parses the returned HTML with DOMParser and extracts reviews using AmazonAdapter.
- * @param {string} asin
- * @param {number} pageNumber
- * @returns {Promise<Array>}
- */
-async function fetchReviewPage(asin, pageNumber) {
-  try {
-    const url = `https://www.amazon.in/product-reviews/${asin}?pageNumber=${pageNumber}&pageSize=10&sortBy=recent`;
-    const res  = await fetch(url, { credentials: 'include' });
-
-    if (!res.ok) {
-      console.warn(`[TrustLens] Page ${pageNumber} fetch failed: ${res.status}`);
-      return [];
-    }
-
-    const html   = await res.text();
-    const parser = new DOMParser();
-    const doc    = parser.parseFromString(html, 'text/html');
-
-    // Use AmazonAdapter logic directly on the fetched document
-    const elements = Array.from(doc.querySelectorAll('[data-hook="review"]'));
-    const adapter  = new AmazonAdapter();
-
-    return elements.map(el => adapter.parseReview(el)).filter(r => r.text || r.rating > 0);
-  } catch (err) {
-    console.warn(`[TrustLens] Error fetching page ${pageNumber}:`, err);
-    return [];
-  }
-}
-
-/**
- * Fetches reviews across multiple pages (up to maxPages).
- * Falls back to DOM extraction if fetch returns 0 results.
- * @param {number} maxPages - how many pages to fetch (10 reviews per page)
- * @returns {Promise<Array>}
- */
-async function fetchMultiPageReviews(maxPages = 8) {
-  const asin = getASIN();
-
-  // Not an Amazon page or ASIN not found — fall back to DOM
-  if (!asin) {
-    console.log('[TrustLens] No ASIN found — using DOM extraction.');
-    const adapter = getAdapter();
-    return adapter.extractAll();
-  }
-
-  console.log(`[TrustLens] ASIN: ${asin} — fetching up to ${maxPages} pages...`);
-
-  const allReviews = [];
-
-  for (let page = 1; page <= maxPages; page++) {
-    const reviews = await fetchReviewPage(asin, page);
-    console.log(`[TrustLens] Page ${page}: ${reviews.length} reviews`);
-
-    if (reviews.length === 0) {
-      // Amazon returned no reviews — stop early
-      console.log(`[TrustLens] No reviews on page ${page}, stopping.`);
-      break;
-    }
-
-    allReviews.push(...reviews);
-
-    // Small delay between requests to avoid rate limiting
-    if (page < maxPages) {
-      await new Promise(r => setTimeout(r, 400));
-    }
-  }
-
-  // If multi-page fetch got nothing, fall back to DOM
-  if (allReviews.length === 0) {
-    console.log('[TrustLens] Multi-page fetch got 0 results — falling back to DOM.');
-    const adapter = getAdapter();
-    return adapter.extractAll();
-  }
-
-  console.log(`[TrustLens] Total reviews fetched: ${allReviews.length}`);
-  return allReviews;
-}
-
-/**
- * Scroll the page to trigger lazy-loaded review sections (non-Amazon fallback).
- */
-async function scrollToLoadReviews() {
-  return new Promise((resolve) => {
-    let scrolled = 0;
-    const limit  = Math.min(document.body.scrollHeight * 0.75, 6000);
-    const interval = setInterval(() => {
-      window.scrollBy(0, 350);
-      scrolled += 350;
-      if (scrolled >= limit) {
-        clearInterval(interval);
-        setTimeout(resolve, 700);
-      }
-    }, 100);
-  });
-}
-
-// ── Auto-run on page load ─────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// content.js  —  TrustLens Stage 2  (entry point)
+//
+// PIPELINE ORDER
+// ──────────────
+//  1. Wait for DOM + extract rating profile (non-text signals)
+//  2. Fetch up to 8 pages of reviews (multi-page, Stage 1 logic kept)
+//  3. Preprocess + feature-engineer every review (Stage 1 modules)
+//  4. Run SentimentRatingEngine on every review  (Stage 2 — mismatch)
+//  5. Build per-user profiles                    (Stage 2 — userProfileBuilder)
+//  6. Run PersonaEngine to classify users         (Stage 2 — personaEngine)
+//  7. Score each review with ScoringEngine        (mismatchScore now feeds in)
+//  8. Calculate the TrustEngine result
+//  9. Render full overlay (Stage 2 UI)
+// 10. Store result for popup retrieval
+// ─────────────────────────────────────────────────────────────────────────────
 
 (async () => {
-  // Wait for DOM to fully settle
+
+  // ── 1. Wait for DOM ───────────────────────────────────────────────────────
   await new Promise(r => setTimeout(r, 1500));
 
-  try {
-    let rawReviews = [];
-    const isAmazon = window.location.hostname.includes('amazon');
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
-    if (isAmazon) {
-      // Multi-page fetch for Amazon (gets up to 80 reviews across 8 pages)
-      rawReviews = await fetchMultiPageReviews(8);
-    } else {
-      // For other sites: scroll to load lazy content, then extract from DOM
-      await scrollToLoadReviews();
-      const adapter = getAdapter();
-      rawReviews = adapter.extractAll();
-    }
-
-    if (rawReviews.length === 0) {
-      console.log('[TrustLens] No reviews detected on this page.');
-      return;
-    }
-
-    const result = TrustEngine.analyze(rawReviews);
-    TrustLensUI.render(result);
-    console.log(`[TrustLens] Analysis complete (${rawReviews.length} reviews):`, result);
-
-  } catch (err) {
-    console.error('[TrustLens] Error during analysis:', err);
+  function isAmazon() {
+    return window.location.hostname.includes('amazon');
   }
-})();
 
-// ── Manual trigger from popup ─────────────────────────────────────────────────
+  function getASIN() {
+    const m = window.location.pathname.match(/\/dp\/([A-Z0-9]{10})/);
+    return m ? m[1] : null;
+  }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.action === 'runAnalysis') {
-    (async () => {
-      try {
-        let rawReviews = [];
-        const isAmazon = window.location.hostname.includes('amazon');
+  // ── 2. Multi-page review fetch (Amazon only) ──────────────────────────────
 
-        if (isAmazon) {
-          // Allow popup to override how many pages to fetch
-          const pages = message.pages || 8;
-          rawReviews  = await fetchMultiPageReviews(pages);
-        } else {
-          await scrollToLoadReviews();
-          const adapter = getAdapter();
-          rawReviews    = adapter.extractAll();
-        }
+  async function fetchReviewPage(asin, pageNumber) {
+    try {
+      const url = `https://www.amazon.in/product-reviews/${asin}?pageNumber=${pageNumber}`;
+      const res = await fetch(url, { credentials: 'include' });
+      if (!res.ok) return [];
+      const html = await res.text();
+      const doc  = new DOMParser().parseFromString(html, 'text/html');
+      // Use the Stage 2 AmazonAdapter which extracts all new fields
+      return new AmazonAdapter().parseFromDoc(doc);
+    } catch (err) {
+      console.warn('[TrustLens] fetchReviewPage error:', err);
+      return [];
+    }
+  }
 
-        const result = TrustEngine.analyze(rawReviews);
-        TrustLensUI.render(result);
-        sendResponse({ success: true, result });
+  async function fetchMultiPageReviews(maxPages = 8) {
+    const asin = getASIN();
+    if (!asin) return getAdapter().extractAll();
 
-      } catch (err) {
-        console.error('[TrustLens] runAnalysis error:', err);
-        sendResponse({ success: false, error: err.message });
+    const all = [];
+    for (let page = 1; page <= maxPages; page++) {
+      const reviews = await fetchReviewPage(asin, page);
+      if (reviews.length === 0) break;
+      all.push(...reviews);
+      await new Promise(r => setTimeout(r, 400));
+    }
+    return all.length > 0 ? all : getAdapter().extractAll();
+  }
+
+  // ── Main analysis function ────────────────────────────────────────────────
+
+  async function runAnalysis() {
+    try {
+      // ── Step 1: Rating profile (non-text signals) ──────────────────────
+      const ratingProfile = RatingExtractor.extract();
+
+      // ── Step 2: Fetch reviews ──────────────────────────────────────────
+      let rawReviews;
+      if (isAmazon()) {
+        rawReviews = await fetchMultiPageReviews(8);
+      } else {
+        // Non-Amazon: scroll to trigger lazy load then extract
+        window.scrollTo(0, document.body.scrollHeight / 2);
+        await new Promise(r => setTimeout(r, 800));
+        rawReviews = getAdapter().extractAll();
       }
-    })();
 
-    return true; // keep message channel open for async response
+      if (!rawReviews || rawReviews.length === 0) {
+        console.warn('[TrustLens] No reviews found.');
+        return null;
+      }
+
+      // ── Step 3: Preprocess + feature engineering (Stage 1) ────────────
+      const preprocessed = rawReviews.map(r => {
+        const cleaned = Preprocessor.clean(r);
+        return FeatureEngineer.extract(cleaned, rawReviews);
+      });
+
+      // ── Step 4: Sentiment + mismatch analysis (Stage 2) ───────────────
+      const { reviews: sentimentReviews, summary: sentimentSummary } =
+        SentimentRatingEngine.analyseAll(preprocessed);
+
+      // ── Step 5: Build user profiles (Stage 2) ─────────────────────────
+      const profileMap = UserProfileBuilder.buildProfiles(sentimentReviews);
+
+      // ── Step 6: Persona classification (Stage 2) ──────────────────────
+      const personaResult = PersonaEngine.classifyAll(profileMap);
+
+      // ── Step 7: Score each review (mismatchScore now wired in) ────────
+      const scoredReviews = sentimentReviews.map(r => ScoringEngine.score(r));
+
+      // ── Step 8: Trust engine ───────────────────────────────────────────
+      const trustResult = TrustEngine.analyze(scoredReviews);
+
+      // ── Step 9: Assemble full result ───────────────────────────────────
+      const fullResult = {
+        // Stage 1 core
+        ...trustResult,
+
+        // Stage 2 — rating profile
+        ratingProfile,
+
+        // Stage 2 — sentiment
+        sentimentSummary,
+
+        // Stage 2 — persona
+        personaSummary : personaResult.summary,
+        personaProfiles: personaResult.profiles,
+
+        // Convenience fields for popup
+        verifiedPercent : Math.round((ratingProfile.verifiedRatio || 0) * 100),
+        mediaPercent    : rawReviews.length
+          ? Math.round(((ratingProfile.imageReviewCount + ratingProfile.videoReviewCount) / rawReviews.length) * 100)
+          : 0,
+        avgWordCount    : Math.round(
+          sentimentReviews.reduce((s, r) => s + (r.wordCount || 0), 0) / (sentimentReviews.length || 1)
+        ),
+        mismatchPercent : Math.round((sentimentSummary.mismatchedCount / (sentimentReviews.length || 1)) * 100),
+        fakeUsers       : personaResult.summary.fakePercent,
+        dummyUsers      : personaResult.summary.dummyPercent,
+        realUsers       : personaResult.summary.realPercent,
+      };
+
+      // ── Step 10: Persist for popup ────────────────────────────────────
+      try {
+        chrome.storage.local.set({ trustlens_last_result: fullResult });
+      } catch (_) {}
+
+      // ── Step 11: Render overlay ───────────────────────────────────────
+      TrustLensUI.render(fullResult);
+
+      return fullResult;
+
+    } catch (err) {
+      console.error('[TrustLens] Pipeline error:', err);
+      return null;
+    }
   }
-});
+
+  // ── Auto-run on page load ─────────────────────────────────────────────────
+  runAnalysis();
+
+  // ── Message listener (popup triggers) ────────────────────────────────────
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg.action === 'ping') {
+      sendResponse({ alive: true });
+      return true;
+    }
+
+    if (msg.action === 'runAnalysis') {
+      runAnalysis().then(result => {
+        if (result) {
+          sendResponse({ success: true, result });
+        } else {
+          sendResponse({ success: false });
+        }
+      });
+      return true; // keep channel open for async
+    }
+  });
+
+})();
