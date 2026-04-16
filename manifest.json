@@ -2,42 +2,18 @@
   "manifest_version": 3,
   "name": "TrustLens – Fake Review Detector",
   "version": "2.0.0",
-  "description": "Detects fake reviews, analyses sentiment mismatch, and classifies user personas on Amazon & Flipkart.",
-
-  "permissions": [
-    "activeTab",
-    "storage"
-  ],
-
-  "host_permissions": [
-    "*://*.amazon.in/*",
-    "*://*.amazon.com/*",
-    "*://*.flipkart.com/*"
-  ],
-
-  "action": {
-    "default_popup": "popup.html",
-    "default_icon": {
-      "16":  "icons/icon16.png",
-      "48":  "icons/icon48.png",
-      "128": "icons/icon128.png"
-    }
-  },
-
   "content_scripts": [
     {
       "matches": [
         "*://*.amazon.com/*",
         "*://*.amazon.in/*",
-        "*://*.flipkart.com/*",
-        "*://*/*"
+        "*://*.flipkart.com/*"
       ],
       "js": [
         "src/adapters/platformAdapter.js",
         "src/adapters/amazonAdapter.js",
         "src/adapters/flipkartAdapter.js",
         "src/adapters/genericAdapter.js",
-        "src/extraction/reviewExtractor.js",
         "src/extraction/ratingExtractor.js",
         "src/preprocessing/preprocessor.js",
         "src/features/featureEngineer.js",
@@ -47,16 +23,16 @@
         "src/scoring/scoringEngine.js",
         "src/trust/trustEngine.js",
         "src/ui/overlay.js",
-        "content.js"
+        "content.js" 
       ],
       "css": ["src/ui/overlay.css"],
       "run_at": "document_end"
     }
   ],
-
-  "icons": {
-    "16":  "icons/icon16.png",
-    "48":  "icons/icon48.png",
-    "128": "icons/icon128.png"
-  }
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": [
+    "*://*.amazon.in/*",
+    "*://*.amazon.com/*",
+    "*://*.flipkart.com/*"
+  ]
 }
