@@ -1,8 +1,4 @@
-# TrueView
-
-
-
- # TrustLens (TrueView Engine)
+# TrustLens (TrueView Engine)
 
 ### The Intelligence Layer for E-Commerce Trust
 
